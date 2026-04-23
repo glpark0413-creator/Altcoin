@@ -52,10 +52,10 @@ def check_entry_conditions(df: pd.DataFrame) -> bool:
     # 조금 더 확실한 반전을 보려면, 현재 RSI가 45를 막 상향 돌파하거나, 45 밑에서 바닥을 찍고 올라오는 모양
     cond_1_rsi = (prev_rsi <= Config.RSI_OVERSOLD_THRESHOLD) and (current_rsi > prev_rsi)
     
-    # 조건 2: 거래량 폭발
-    cond_2_vol = current_vol >= (prev_vol_ma * Config.VOLUME_SPIKE_RATIO)
+    # 조건 2: 거래량 폭발 (사용자 요청으로 매수 알고리즘에서 제외)
+    # cond_2_vol = current_vol >= (prev_vol_ma * Config.VOLUME_SPIKE_RATIO)
     
     # 조건 3: 20 EMA 상단
     cond_3_ema = current_close > current_ema
     
-    return cond_1_rsi and cond_2_vol and cond_3_ema
+    return cond_1_rsi and cond_3_ema

@@ -86,7 +86,7 @@ class TradingEngine:
                 # 포지션이 비어있다면: [1, 2단계] Top 3 모니터링 및 진입 조건 체킹
                 if self.position.is_empty:
                     top3_symbols = getattr(self.monitor, 'top_3_symbols', [])
-                    self._log_state(f"🔎 [1단계: 타점 감시] 현재 1~3위 코인({', '.join(top3_symbols)})의 데이터(RSI/EMA/거래량)를 실시간 추적합니다.")
+                    self._log_state(f"🔎 [1단계: 타점 감시] 현재 1~3위 코인({', '.join(top3_symbols)})의 데이터(RSI/EMA)를 실시간 추적합니다.")
                     await self._handle_entry_monitoring()
                 # 포지션이 존재한다면: [3, 4단계] DCA 추매 및 익절 조건 체킹
                 else:
@@ -147,7 +147,7 @@ class TradingEngine:
                     self.acc_buy_fee = fee # 첫 매수 수수료 등록
                     
                     # 3차 메세지 발송을 위한 파라미터 준비
-                    reason = "1분봉 RSI 45이하 반등, 거래량 이전 10캔들 대비 200% 폭발, EMA 20 상단 충족"
+                    reason = "1분봉 RSI 45이하 반등 성공 및 20 EMA 상단 회복 (단기 눌림목 돌파)"
                     tp1_price = price * (1 + Config.TAKE_PROFIT_1_THRESHOLD)
                     tp2_price = price * (1 + Config.TAKE_PROFIT_2_THRESHOLD)
                     
