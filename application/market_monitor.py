@@ -16,7 +16,7 @@ class MarketMonitor:
 
     async def check_macro_switch(self):
         """BTC 1시간 변동률 체크"""
-        btc_ohlcv = await self.upbit_client.fetch_ohlcv('BTC/KRW', timeframe='60m', limit=2)
+        btc_ohlcv = await self.upbit_client.fetch_ohlcv('BTC/KRW', timeframe='1h', limit=2)
         if len(btc_ohlcv) < 2:
             return False
             
@@ -61,14 +61,22 @@ class MarketMonitor:
         # 2. 상위 15개에 대해 최근 1시간 거래량(통상 1분봉 60개 합) 계산
         # 업비트 API rate limit 방지를 위해 asyncio.gather 로 동시 요청하되 제한 고려 필요 
         # (ccxt가 enableRateLimit 속성으로 어느정도 내장 제어함)
-        tasks = []
+        ohlcv_results = []
         symbols = []
+        
         for t in top_15_candidates:
             symbol = t['symbol']
             symbols.append(symbol)
-            tasks.append(self.upbit_client.fetch_ohlcv(symbol, timeframe='1m', limit=60))
             
-        ohlcv_results = await asyncio.gather(*tasks)
+            try:
+                ohlcv = await self.upbit_client.fetch_ohlcv(symbol, timeframe='1m', limit=60)
+                ohlcv_results.append(ohlcv)
+            except Exception as e:
+                logger.error(f"{symbol} 데이터 수집 에러: {e}")
+                ohlcv_results.append([])
+                
+            # 봇 숨 고르기 (필수)
+            await asyncio.sleep(0.2)
         
         for symbol, ohlcv_list, t_data in zip(symbols, ohlcv_results, top_15_candidates):
             # 1분봉 60개의 volume 컬럼(index 5) 합산
