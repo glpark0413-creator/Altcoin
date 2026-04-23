@@ -33,6 +33,12 @@ class TradingEngine:
         self.monthly_pnl = 0.0
         self.current_day = ""
         self.current_month = ""
+        self.last_log_state = ""
+
+    def _log_state(self, msg: str):
+        if self.last_log_state != msg:
+            logger.info(msg)
+            self.last_log_state = msg
 
     async def run(self):
         self.is_running = True
@@ -50,6 +56,7 @@ class TradingEngine:
                 
                 # 매크로 감시 및 Top 3 갱신 (60초 주기)
                 if now - self.last_top3_update > Config.MONITOR_UPDATE_INTERVAL_SEC:
+                    self._log_state("⏳ [루틴 주기] 비트코인 일시 하락 감시 판별 및 주도주 Top 3 현행화 검사 중...")
                     is_macro_danger = await self.monitor.check_macro_switch()
                     if is_macro_danger:
                         await self.telegram.notify_macro_off(Config.MACRO_BTC_DROP_THRESHOLD)
@@ -78,9 +85,12 @@ class TradingEngine:
 
                 # 포지션이 비어있다면: [1, 2단계] Top 3 모니터링 및 진입 조건 체킹
                 if self.position.is_empty:
+                    top3_symbols = getattr(self.monitor, 'top_3_symbols', [])
+                    self._log_state(f"🔎 [1단계: 타점 감시] 현재 1~3위 코인({', '.join(top3_symbols)})의 데이터(RSI/EMA/거래량)를 실시간 추적합니다.")
                     await self._handle_entry_monitoring()
                 # 포지션이 존재한다면: [3, 4단계] DCA 추매 및 익절 조건 체킹
                 else:
+                    self._log_state(f"🛡️ [3단계: 포지션 방어 및 대기] {self.position.symbol} 보유 중(평단: {self.position.avg_price:,.2f}원). 물타기 {self.position.dca_step}단계 적용되었으며 익절/본절 방어 감시 중...")
                     await self._handle_position_management()
 
                 # API 호출 제한 고려 (쿨다운)
@@ -113,10 +123,10 @@ class TradingEngine:
                 
                 # 거래량이 너무 작으면 제한
                 if invest_amount < 5000:
-                    logger.warning(f"Insufficient KRW balance: {invest_amount}")
+                    logger.warning(f"⚠️ 매수 실패: 가용 KRW({invest_amount})가 업비트 최소 주문 단위(5000원)보다 작습니다.")
                     return
 
-                logger.info(f"Entry Signal Detected for {symbol}! Placing buy order.")
+                logger.info(f"🎯 [2단계: 스나이퍼 매수] {symbol} 종목의 정밀 타점 포착! 1차 시장가 매수를 진행합니다.")
                 # 마켓 매수 주문 전송
                 order = await self.upbit.create_market_buy_order(symbol, invest_amount)
                 
@@ -169,6 +179,7 @@ class TradingEngine:
         action, sell_ratio = SniperStrategyV2.check_tp_condition(self.position, current_price)
         
         if action:
+            logger.info(f"💡 [4단계: 매도 발동] {symbol} {action} 조건 달성! 시장가 매도를 진행합니다.")
             sell_amount = self.position.total_amount * sell_ratio
             # 안전하게 남은 수량 보정
             if sell_amount > self.position.total_amount:
@@ -238,6 +249,7 @@ class TradingEngine:
         dca_next_step = SniperStrategyV2.check_dca_condition(self.position, current_price)
         
         if dca_next_step is not None:
+            logger.info(f"📉 [3단계: 물타기 발동] {symbol} 수익률 하락 방어를 목적으로 {dca_next_step}단계 DCA 매수를 집행합니다.")
             krw_balance = await self.upbit.get_balance('KRW')
             dca_ratio = SniperStrategyV2.get_dca_amount_ratio(dca_next_step)
             

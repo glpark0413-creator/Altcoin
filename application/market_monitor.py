@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from config.settings import Config
 from infrastructure.exchange.upbit_client import UpbitClient
 from domain.strategy.sniper_v2 import SniperStrategyV2
@@ -15,7 +16,7 @@ class MarketMonitor:
 
     async def check_macro_switch(self):
         """BTC 1시간 변동률 체크"""
-        btc_ohlcv = await self.upbit_client.fetch_ohlcv('KRW-BTC', timeframe='60m', limit=2)
+        btc_ohlcv = await self.upbit_client.fetch_ohlcv('BTC/KRW', timeframe='60m', limit=2)
         if len(btc_ohlcv) < 2:
             return False
             
@@ -40,7 +41,7 @@ class MarketMonitor:
 
     async def update_top_3(self):
         """24시간 거래대금 상위 15개 선별 -> 최근 1시간 실질 거래대금 Top 3 도출"""
-        logger.info("Updating Top 3 tracking coins...")
+        logger.info("🔍 [마켓 모니터링] 24시간 거래대금 상위 15개 코인 선별 및 실질 거래대금 기준 Top 3 추출을 시작합니다...")
         
         # 1. 모든 KRW 마켓 티커 조회 (24시간 거래대금순 정렬을 위해)
         krw_markets = await self.upbit_client.get_krw_markets()
@@ -92,7 +93,7 @@ class MarketMonitor:
         
         if new_top_3:
             self.top_3_symbols = new_top_3
-            logger.info(f"New Top 3 symbols: {self.top_3_symbols}")
+            logger.info(f"✨ [종목 추출 완료] 실시간 주도주 Top 3 선정: {', '.join(self.top_3_symbols)}")
             
         # 변경되었는지 반환
         return old_top_3, self.top_3_symbols
