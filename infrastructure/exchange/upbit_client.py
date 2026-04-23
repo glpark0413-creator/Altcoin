@@ -73,5 +73,12 @@ class UpbitClient:
             logger.error(f"Failed to create sell order for {symbol}: {e}")
             return None
 
+    async def fetch_order(self, id: str, symbol: str = None):
+        try:
+            return await self.exchange.fetch_order(id, symbol)
+        except Exception as e:
+            logger.error(f"Failed to fetch order {id}: {e}")
+            return None
+
     async def close(self):
         await self.exchange.close()

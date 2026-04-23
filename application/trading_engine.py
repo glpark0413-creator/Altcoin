@@ -40,6 +40,36 @@ class TradingEngine:
             logger.info(msg)
             self.last_log_state = msg
 
+    def get_status_summary(self) -> str:
+        """텔레그램에서 /status 명령어 입력 시 반환할 상태 요약 메세지"""
+        if self.position.is_empty:
+            top3 = getattr(self.monitor, 'top_3_symbols', [])
+            return (
+                f"🔎 [현재 봇 상태: 대기 중]\n"
+                f"- 보유 종목: 없음\n"
+                f"- 감시 중인 주도주 Top 3: {', '.join(top3) if top3 else '탐색 중'}\n"
+                f"- 봇 가동 시 누적 수익금: {self.daily_pnl:,.0f} 원\n"
+                f"- 이번 달 총 누적 수익: {self.monthly_pnl:,.0f} 원"
+            )
+        else:
+            return (
+                f"🛡️ [현재 봇 상태: 포지션 보유 중]\n"
+                f"- 보유 종목: {self.position.symbol}\n"
+                f"- 매수 평단가: {self.position.avg_price:,.2f} 원\n"
+                f"- 총 매수 금액: {self.position.total_cost:,.0f} 원\n"
+                f"- 물타기(DCA) 단계: {self.position.dca_step} 단계\n"
+                f"- 단타 및 봇 누적 수익: {self.daily_pnl:,.0f} 원"
+            )
+
+    async def _wait_for_closed_order(self, order_id: str, symbol: str):
+        """업비트 서버에서 체결 정보(수수료, 평균단가)가 완벽히 계산될 때까지 최대 1.5초 대기하며 조회"""
+        for _ in range(3):
+            await asyncio.sleep(0.5)
+            fetched = await self.upbit.fetch_order(order_id, symbol)
+            if fetched and fetched.get('status') == 'closed':
+                return fetched
+        return None
+
     async def run(self):
         self.is_running = True
         logger.info("Starting Trading Engine V2.2...")
@@ -131,14 +161,19 @@ class TradingEngine:
                 order = await self.upbit.create_market_buy_order(symbol, invest_amount)
                 
                 if order:
-                    # 체결 정보 반영
-                    price = order.get('average', order.get('price', order.get('cost', invest_amount)/order.get('amount', 1) if order.get('amount') else 0))
-                    amount = order.get('filled', 0)
-                    fee = order.get('fee', {}).get('cost', invest_amount * Config.TRADE_FEE)
+                    order_id = order.get('id')
+                    closed_order = await self._wait_for_closed_order(order_id, symbol)
+                    if closed_order:
+                        order = closed_order
+                        
+                    # 체결 정보 널(None) 방어 로직
+                    price = order.get('average') or order.get('price') or 0
+                    amount = order.get('filled') or order.get('amount') or 0
+                    fee_info = order.get('fee')
+                    fee = fee_info.get('cost') if fee_info and 'cost' in fee_info else (invest_amount * Config.TRADE_FEE)
                     
-                    # 만약 average나 filled가 즉시 안오면 (업비트는 보통 동기적으로 오지만) 재확인 로직이 필요할 수 있음
                     # 현재가로 임시 기록
-                    if price == 0 or amount == 0:
+                    if not price or not amount:
                         price = await self.upbit.get_current_price(symbol)
                         amount = (invest_amount - fee) / price
 
@@ -188,10 +223,19 @@ class TradingEngine:
             # 마켓 매도 주문
             order = await self.upbit.create_market_sell_order(symbol, amount=sell_amount)
             if order:
+                order_id = order.get('id')
+                closed_order = await self._wait_for_closed_order(order_id, symbol)
+                if closed_order:
+                    order = closed_order
+                    
                 # 수익 계산용 파라미터 준비
-                sell_price = order.get('average') or current_price
-                sell_amount_krw = sell_amount * sell_price
-                sell_fee = order.get('fee', {}).get('cost', sell_amount_krw * Config.TRADE_FEE)
+                sell_price = order.get('average') or order.get('price') or current_price
+                
+                # 업비트 API가 확정한 순수 총 매도 원화(KRW) 가치 최우선 사용
+                sell_amount_krw = order.get('cost') or (sell_amount * sell_price)
+                
+                sell_fee_info = order.get('fee')
+                sell_fee = sell_fee_info.get('cost') if sell_fee_info and 'cost' in sell_fee_info else (sell_amount_krw * Config.TRADE_FEE)
                 
                 buy_ratio = sell_amount / self.position.total_amount
                 
@@ -257,9 +301,15 @@ class TradingEngine:
             if invest_amount >= 5000: # 업비트 최소 주문 금액
                 order = await self.upbit.create_market_buy_order(symbol, invest_amount)
                 if order:
-                    price = order.get('average') or current_price
-                    amount = order.get('filled') or ((invest_amount - invest_amount * Config.TRADE_FEE) / price)
-                    fee = order.get('fee', {}).get('cost', invest_amount * Config.TRADE_FEE)
+                    order_id = order.get('id')
+                    closed_order = await self._wait_for_closed_order(order_id, symbol)
+                    if closed_order:
+                        order = closed_order
+                        
+                    price = order.get('average') or order.get('price') or current_price
+                    amount = order.get('filled') or order.get('amount') or ((invest_amount - invest_amount * Config.TRADE_FEE) / price)
+                    fee_info = order.get('fee')
+                    fee = fee_info.get('cost') if fee_info and 'cost' in fee_info else (invest_amount * Config.TRADE_FEE)
                     
                     self.position.add_buy(price, amount, fee)
                     self.position.dca_step = dca_next_step

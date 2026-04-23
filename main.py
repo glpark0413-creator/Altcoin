@@ -26,14 +26,20 @@ async def main():
     monitor = MarketMonitor(upbit_client=upbit)
     
     engine = TradingEngine(upbit=upbit, telegram=telegram, monitor=monitor)
+    telegram.set_engine(engine) # 콜백 함수용 엔진 주입
     
     try:
+        # 텔레그램 명령어 대기열 접속
+        await telegram.start_polling()
+        
+        # 메인 자동매매 루프 시작
         await engine.run()
     except KeyboardInterrupt:
         logger.info("Bot manually stopped.")
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
     finally:
+        await telegram.stop_polling()
         await upbit.close()
         logger.info("Shutdown complete.")
 

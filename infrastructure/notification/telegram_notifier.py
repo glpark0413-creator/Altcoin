@@ -1,4 +1,5 @@
-from telegram import Bot
+from telegram import Bot, Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import asyncio
 from config.settings import Config
 import logging
@@ -10,6 +11,55 @@ class TelegramNotifier:
         self.bot_token = Config.TELEGRAM_BOT_TOKEN
         self.chat_id = Config.TELEGRAM_CHAT_ID
         self.bot = Bot(token=self.bot_token) if self.bot_token else None
+        self.engine = None
+        self.app = None
+
+    def set_engine(self, engine):
+        self.engine = engine
+
+    async def start_polling(self):
+        """텔레그램 명령어(/status) 수신을 위한 백그라운드 리스너 구동"""
+        if not self.bot_token:
+            return
+        logger.info("텔레그램 명령어(/status) 대기 모듈을 시작합니다...")
+        logging.getLogger('httpx').setLevel(logging.WARNING) # httpx 로그 무시
+        
+        self.app = ApplicationBuilder().token(self.bot_token).build()
+        self.app.add_handler(CommandHandler("status", self._status_command))
+        self.app.add_handler(CommandHandler("profit", self._profit_command))
+        
+        await self.app.initialize()
+        await self.app.start()
+        await self.app.updater.start_polling(drop_pending_updates=True)
+
+    async def _status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """사용자가 /status 입력 시 봇 매매 현황 반환"""
+        if not self.engine:
+            await update.message.reply_text("봇 엔진이 아직 준비되지 않았습니다.")
+            return
+            
+        status_msg = self.engine.get_status_summary()
+        await update.message.reply_text(status_msg)
+        
+    async def _profit_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """사용자가 /profit 입력 시 당일/당월 수익금 요약 응답"""
+        if not self.engine:
+            await update.message.reply_text("봇 엔진이 아직 준비되지 않았습니다.")
+            return
+            
+        profit_msg = (
+            f"📊 [수익률 결산 (KST 기준)]\n"
+            f"- 당일 누적 수익 : {self.engine.daily_pnl:,.0f} 원\n"
+            f"- 당월 누적 수익 : {self.engine.monthly_pnl:,.0f} 원"
+        )
+        await update.message.reply_text(profit_msg)
+
+    async def stop_polling(self):
+        """명령어 수신 종료"""
+        if self.app:
+            await self.app.updater.stop()
+            await self.app.stop()
+            await self.app.shutdown()
 
     async def send_message(self, message: str):
         if not self.bot or not self.chat_id:

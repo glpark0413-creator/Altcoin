@@ -52,8 +52,11 @@ class MarketMonitor:
         if not tickers:
             return
             
+        # BTC 제외 (알트코인만 대상)
+        altcoin_tickers = [t for t in tickers.values() if t.get('symbol') not in ('BTC/KRW', 'KRW-BTC')]
+        
         # 24H 거래대금(quoteVolume) 으로 정렬하여 상위 15개 선별
-        sorted_by_24h = sorted(tickers.values(), key=lambda t: t.get('quoteVolume', 0), reverse=True)
+        sorted_by_24h = sorted(altcoin_tickers, key=lambda t: t.get('quoteVolume', 0), reverse=True)
         top_15_candidates = sorted_by_24h[:15]
         
         ticker_models = []
