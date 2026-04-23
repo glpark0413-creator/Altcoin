@@ -149,7 +149,7 @@ class TradingEngine:
             if is_entry_signal:
                 # 진입 조건 충족! -> 가용 현금 20% 진입
                 krw_balance = await self.upbit.get_balance('KRW')
-                invest_amount = krw_balance * Config.INITIAL_INVESTMENT_RATIO
+                invest_amount = (krw_balance + self.position.total_cost) * Config.INITIAL_INVESTMENT_RATIO
                 
                 # 거래량이 너무 작으면 제한
                 if invest_amount < 5000:
@@ -166,11 +166,14 @@ class TradingEngine:
                     if closed_order:
                         order = closed_order
                         
-                    # 체결 정보 널(None) 방어 로직
-                    price = order.get('average') or order.get('price') or 0
-                    amount = order.get('filled') or order.get('amount') or 0
+                    # 체결 정보 널(None) 및 문자열 방어 로직 (완전 차단)
+                    raw_price = order.get('average') or order.get('price') or 0
+                    raw_amount = order.get('filled') or order.get('amount') or 0
+                    price = float(raw_price)
+                    amount = float(raw_amount)
+                    
                     fee_info = order.get('fee')
-                    fee = fee_info.get('cost') if fee_info and 'cost' in fee_info else (invest_amount * Config.TRADE_FEE)
+                    fee = float(fee_info.get('cost')) if fee_info and 'cost' in fee_info else float(invest_amount * Config.TRADE_FEE)
                     
                     # 현재가로 임시 기록
                     if not price or not amount:
@@ -210,6 +213,12 @@ class TradingEngine:
         if not current_price:
             return
 
+        # 실제 업비트 평균단가와 보유수량 100% 동기화 (오차 방지)
+        upbit_info = await self.upbit.get_coin_balance_info(symbol)
+        if upbit_info and upbit_info['avg_buy_price'] > 0:
+            self.position.avg_price = upbit_info['avg_buy_price']
+            self.position.total_amount = upbit_info['amount']
+
         # 1. 익절/본절 방어 조건 체크
         action, sell_ratio = SniperStrategyV2.check_tp_condition(self.position, current_price)
         
@@ -228,14 +237,16 @@ class TradingEngine:
                 if closed_order:
                     order = closed_order
                     
-                # 수익 계산용 파라미터 준비
-                sell_price = order.get('average') or order.get('price') or current_price
+                # 수익 계산용 파라미터 강제 형변환
+                raw_price = order.get('average') or order.get('price') or current_price
+                sell_price = float(raw_price)
                 
                 # 업비트 API가 확정한 순수 총 매도 원화(KRW) 가치 최우선 사용
-                sell_amount_krw = order.get('cost') or (sell_amount * sell_price)
+                raw_cost = order.get('cost')
+                sell_amount_krw = float(raw_cost) if raw_cost else float(sell_amount * sell_price)
                 
                 sell_fee_info = order.get('fee')
-                sell_fee = sell_fee_info.get('cost') if sell_fee_info and 'cost' in sell_fee_info else (sell_amount_krw * Config.TRADE_FEE)
+                sell_fee = float(sell_fee_info.get('cost')) if sell_fee_info and 'cost' in sell_fee_info else float(sell_amount_krw * Config.TRADE_FEE)
                 
                 buy_ratio = sell_amount / self.position.total_amount
                 
@@ -295,9 +306,10 @@ class TradingEngine:
         if dca_next_step is not None:
             logger.info(f"📉 [3단계: 물타기 발동] {symbol} 수익률 하락 방어를 목적으로 {dca_next_step}단계 DCA 매수를 집행합니다.")
             krw_balance = await self.upbit.get_balance('KRW')
+            total_seed = krw_balance + self.position.total_cost
             dca_ratio = SniperStrategyV2.get_dca_amount_ratio(dca_next_step)
             
-            invest_amount = krw_balance * dca_ratio
+            invest_amount = total_seed * dca_ratio
             if invest_amount >= 5000: # 업비트 최소 주문 금액
                 order = await self.upbit.create_market_buy_order(symbol, invest_amount)
                 if order:
@@ -306,10 +318,16 @@ class TradingEngine:
                     if closed_order:
                         order = closed_order
                         
-                    price = order.get('average') or order.get('price') or current_price
-                    amount = order.get('filled') or order.get('amount') or ((invest_amount - invest_amount * Config.TRADE_FEE) / price)
+                    raw_price = order.get('average') or order.get('price') or current_price
+                    raw_amount = order.get('filled') or order.get('amount') or 0
+                    price = float(raw_price)
+                    amount = float(raw_amount)
+                    
+                    if amount <= 0:
+                         amount = float((invest_amount - invest_amount * Config.TRADE_FEE) / price)
+                         
                     fee_info = order.get('fee')
-                    fee = fee_info.get('cost') if fee_info and 'cost' in fee_info else (invest_amount * Config.TRADE_FEE)
+                    fee = float(fee_info.get('cost')) if fee_info and 'cost' in fee_info else float(invest_amount * Config.TRADE_FEE)
                     
                     self.position.add_buy(price, amount, fee)
                     self.position.dca_step = dca_next_step

@@ -39,15 +39,15 @@ class SniperStrategyV2:
         # 현재 스텝
         current_step = position.dca_step
         
-        # 최대 6단계
-        if current_step >= len(Config.DCA_STEPS):
+        # 최대 5단계 (0~4 인덱스)
+        if current_step >= len(Config.DCA_THRESHOLDS):
             return None
             
-        # 다음 단계 진입 기준은 매 번 평단가 대비 -1%
-        target_drop = Config.DCA_DROP_THRESHOLD # -0.01
+        # 다음 단계 진입 기준은 배열에 정의된 특정 하락폭(target_drop) 이하일 때
+        target_drop = Config.DCA_THRESHOLDS[current_step]
         
         if drop_pct <= target_drop:
-            # 현재 스텝이 0이었으면 1로 넘어감. index로는 0이 첫번째 추매(5%)를 의미
+            # 현재 스텝이 0이었으면 1로 넘어감. index로는 0이 첫번째 추매를 의미
             next_step = current_step + 1
             return next_step
         

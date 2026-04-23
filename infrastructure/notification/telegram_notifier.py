@@ -1,6 +1,8 @@
-from telegram import Bot, Update
+from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import aiohttp
 import asyncio
+import socket
 from config.settings import Config
 import logging
 
@@ -62,14 +64,36 @@ class TelegramNotifier:
             await self.app.shutdown()
 
     async def send_message(self, message: str):
-        if not self.bot or not self.chat_id:
+        if not self.bot_token or not self.chat_id:
             logger.warning(f"Telegram not configured. Mute msg: {message}")
             return
+            
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": message
+        }
         
-        try:
-            await self.bot.send_message(chat_id=self.chat_id, text=message)
-        except Exception as e:
-            logger.error(f"Failed to send telegram message: {e}")
+        # httpx 이벤트루프 충돌로 인한 텔레그램 서버 타임아웃 오류를 근본적으로 우회하기 위해
+        # 안정성이 검증된 ccxt 공용 aiohttp 스택을 빌려 로우레벨(REST API)로 직접 쏩니다.
+        # [핵심] Windows 환경의 고질적인 IPv6 파싱/라우팅 행 누수 현상을 막기 위해 IPv4 강제망 접속 지정
+        for attempt in range(3):
+            try:
+                # 15초 타임아웃 설정
+                timeout = aiohttp.ClientTimeout(total=15)
+                # IPv4 전용 소켓 커넥터
+                conn = aiohttp.TCPConnector(family=socket.AF_INET)
+                
+                async with aiohttp.ClientSession(connector=conn, timeout=timeout) as session:
+                    async with session.post(url, json=payload) as response:
+                        if response.status == 200:
+                            return  # 전송 성공 시 즉각 리턴
+                        else:
+                            resp_text = await response.text()
+                            logger.error(f"텔레그램 전송 실패 HTTP {response.status}: {resp_text}")
+            except Exception as e:
+                logger.error(f"텔레그램 전송 실패 (네트워크/타임아웃 재시도 {attempt+1}/3회): {e}")
+                await asyncio.sleep(2)
 
     async def notify_bot_start(self, balance: float, status: str = "정상 작동 중"):
         msg = f"🚀 [봇 가동 시작]\n1. 보유 시드머니 : {balance:,.0f} KRW\n2. 봇 작동 여부 : {status}"

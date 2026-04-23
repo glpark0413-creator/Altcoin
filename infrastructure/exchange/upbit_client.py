@@ -23,6 +23,24 @@ class UpbitClient:
             logger.error(f"Failed to fetch balance: {e}")
             return 0.0
 
+    async def get_coin_balance_info(self, symbol: str):
+        """특정 코인의 실제 업비트 계좌 수량 및 평균 매수 단가(avg_buy_price) 조회"""
+        try:
+            base_currency = symbol.split('-')[1] if '-' in symbol else symbol.replace('/KRW', '')
+            balance = await self.exchange.fetch_balance()
+            
+            # ccxt balance['info'] 내부의 원본 응답 배열에서 avg_buy_price 추출
+            for item in balance.get('info', []):
+                if item.get('currency') == base_currency:
+                    return {
+                        'amount': float(item.get('balance', 0)) + float(item.get('locked', 0)),
+                        'avg_buy_price': float(item.get('avg_buy_price', 0))
+                    }
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch balance info for {symbol}: {e}")
+            return None
+
     async def get_current_price(self, symbol: str):
         try:
             ticker = await self.exchange.fetch_ticker(symbol)
