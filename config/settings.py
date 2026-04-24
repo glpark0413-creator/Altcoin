@@ -1,56 +1,51 @@
 import os
+import sys
 from dotenv import load_dotenv
 
-# 환경 변수 로드
+# .env 파일 로드 (보안 유지를 위해 필수)
+# 루트 디렉토리에 있는 .env 파일을 찾아서 로드합니다.
 load_dotenv()
 
-class Config:
-    # API Keys
-    UPBIT_ACCESS_KEY = os.getenv("UPBIT_ACCESS_KEY", "")
-    UPBIT_SECRET_KEY = os.getenv("UPBIT_SECRET_KEY", "")
-    
-    # Telegram
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# ==========================================
+# [1] API KEY 및 인프라 설정 (환경 변수에서 호출)
+# ==========================================
+UPBIT_ACCESS = os.getenv("UPBIT_ACCESS_KEY")
+UPBIT_SECRET = os.getenv("UPBIT_SECRET_KEY")
 
-    # Trading Parameters
-    TRADE_FEE = 0.0005  # 업비트 원화마켓 수수료 0.05%
-    INITIAL_INVESTMENT_RATIO = 0.20  # 1차 진입: 전체 시드의 20% (강한 확신)
-    MAX_TRACKING_COINS = 3  # 실시간 감시할 Top 3 코인 수
-    MACRO_BTC_DROP_THRESHOLD = -0.015  # 1시간 비트코인 변동률 -1.5% 이상 하락 시 스위치 오프
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-    # DCA Parameters (업비트 실제 평균 매수 단가 대비 하락폭 기준)
-    DCA_THRESHOLDS = [
-        -0.02,  # 1차 추매: -2%
-        -0.04,  # 2차 추매: -4%
-        -0.06,  # 3차 추매: -6%
-        -0.10,  # 4차 추매: -10%
-        -0.15   # 5차 추매: -15%
-    ]
-    
-    # DCA Ratios (전체 시드머니 총액 기준)
-    DCA_STEPS = [
-        0.04,  # 1차 추매: 전체 시드의 4%
-        0.08,  # 2차 추매: 전체 시드의 8%
-        0.13,  # 3차 추매: 전체 시드의 13%
-        0.21,  # 4차 추매: 전체 시드의 21%
-        0.34   # 5차 추매: 전체 시드의 34%
-    ]
+# 필수 키 누락 방어 로직 (서버 실행 시점에 바로 에러를 뱉게 하여 실수를 방지)
+if not all([UPBIT_ACCESS, UPBIT_SECRET, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]):
+    print("❌ 환경 변수(.env)에 API 키 또는 텔레그램 정보가 누락되었습니다. 설정을 확인해주세요.")
+    sys.exit(1)
 
-    # Take-Profit Parameters (평단가 대비)
-    TAKE_PROFIT_1_THRESHOLD = 0.015  # 1차 익절: +1.5%
-    TAKE_PROFIT_1_RATIO = 0.50       # 1차 익절: 물량 50% 매도
-    
-    TAKE_PROFIT_2_THRESHOLD = 0.025  # 2차 익절: +2.5%
-    TAKE_PROFIT_2_RATIO = 1.00       # 2차 익절: 남은 물량 100% 매도 (전체 대비 50%)
 
-    # Strategy Parameters (1분봉 기준)
-    RSI_PERIOD = 14
-    RSI_OVERSOLD_THRESHOLD = 45
-    VOLUME_MA_PERIOD = 10
-    VOLUME_SPIKE_RATIO = 2.0  # 평균의 200% 이상 폭발
-    EMA_PERIOD = 20
+# ==========================================
+# [2] 매크로 생존 스위치 및 타겟 설정
+# ==========================================
+BTC_CRASH_THRESHOLD = -1.5  # 최근 1시간 BTC 변동률 임계치 (%)
+MONITORING_LIMIT = 3        # 거래대금 상위 동시 감시 코인 수
+TIME_INTERVAL = "minute1"   # 1분봉 기준 감시
 
-    # Polling & System Delays
-    POLL_INTERVAL_SEC = 2.0  # 메인 루프 감시 주기 (초)
-    MONITOR_UPDATE_INTERVAL_SEC = 60  # Top 3 탐색 주기 (초)
+
+# ==========================================
+# [3] 진입 및 익절 설정 (V5.0 기준)
+# ==========================================
+INITIAL_ENTRY_PCT = 0.20    # 초기 진입 비중: 전체 시드의 20%
+
+TAKE_PROFIT_1_PCT = 1.5     # 1차 목표 익절가: 평단가 대비 +1.5% (물량 50% 매도)
+TAKE_PROFIT_2_PCT = 2.5     # 2차 목표 익절가: 평단가 대비 +2.5% (잔량 100% 매도)
+
+
+# ==========================================
+# [4] 전략적 DCA (물타기) 방어 설정
+# ==========================================
+# 기획서 3단계의 하락률(drop_pct)과 시드 투입 비중(seed_pct) 매핑
+DCA_STRATEGY = {
+    1: {"drop_pct": -2.0,  "seed_pct": 0.04}, # -2% 하락 시 전체 시드의 4% 투입
+    2: {"drop_pct": -4.0,  "seed_pct": 0.08},
+    3: {"drop_pct": -6.0,  "seed_pct": 0.13},
+    4: {"drop_pct": -10.0, "seed_pct": 0.21},
+    5: {"drop_pct": -15.0, "seed_pct": 0.34},
+}

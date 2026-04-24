@@ -1,5 +1,5 @@
-ccxt>=4.2.0
-pandas>=2.0.0
-TA-Lib>=0.4.24
-python-telegram-bot>=20.0.0
-python-dotenv>=1.0.0
+pyupbit==0.2.33
+pandas==2.2.0
+pandas-ta==0.3.14b0
+requests==2.31.0
+python-dotenv==1.0.1
