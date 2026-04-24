@@ -25,6 +25,13 @@ class BotService:
         self.current_target_half_sold = False # 타겟의 절반 익절 여부 기억
         self.daily_profit = 0.0
         self.monthly_profit = 0.0
+        
+        import pytz
+        kst = pytz.timezone('Asia/Seoul')
+        now = datetime.now(kst)
+        self.current_day = now.day
+        self.current_month = now.month
+        
         self.last_reported_top_coins = [] # 텔레그램 스팸 방지용 (이전 Top 3 기억)
         self.last_scan_time = 0 # 5분 주기 스캔을 위한 타임스탬프
         self.cached_target_coins = [] # 5분 동안 유지할 타겟 코인
@@ -37,8 +44,20 @@ class BotService:
         
         while True:
             try:
-                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"\n[{now}] 🔄 새로운 감시 사이클 시작")
+                import pytz
+                kst = pytz.timezone('Asia/Seoul')
+                now_kst = datetime.now(kst)
+                
+                # [초기화 로직] 매일 자정(KST)이 넘어가면 당일 수익 초기화, 1일이면 당월 수익 초기화
+                if now_kst.day != self.current_day:
+                    self.daily_profit = 0.0
+                    self.current_day = now_kst.day
+                if now_kst.month != self.current_month:
+                    self.monthly_profit = 0.0
+                    self.current_month = now_kst.month
+
+                now_str = now_kst.strftime('%Y-%m-%d %H:%M:%S')
+                print(f"\n[{now_str}] 🔄 새로운 감시 사이클 시작")
                 
                 # 텔레그램 명령어 확인
                 commands = self.telegram.get_new_commands()
@@ -117,21 +136,31 @@ class BotService:
         exit_signal = SniperStrategy.check_exit_condition(profit_pct)
         if exit_signal == "FULL_EXIT":
             sell_result = self.upbit.sell_market_order(self.current_target, volume=position.volume)
-            profit = (sell_result['avg_price'] - position.avg_price) * position.volume - sell_result['fee']
+            buy_amount = position.avg_price * position.volume
+            buy_fee = buy_amount * 0.0005 # 업비트 기본 수수료율 0.05%
+            
+            profit = sell_result['total_price'] - (buy_amount + sell_result['fee'] + buy_fee)
             self.daily_profit += profit
             self.monthly_profit += profit
-            self.telegram.send_sell_report(sell_result, self.daily_profit, self.monthly_profit)
+            self.telegram.send_sell_report(sell_result, buy_amount, buy_fee, self.daily_profit, self.monthly_profit)
+            
             self.current_target = None # 무한 루프 초기화 (1단계 복귀)
             self.current_target_dca_level = 0
             self.current_target_half_sold = False
             return
+            
         elif exit_signal == "HALF_EXIT" and not self.current_target_half_sold:
-            sell_result = self.upbit.sell_market_order(self.current_target, volume=position.volume * 0.5)
+            sell_volume = position.volume * 0.5
+            sell_result = self.upbit.sell_market_order(self.current_target, volume=sell_volume)
             self.current_target_half_sold = True # 스팸/무한 매도 방지용 로컬 저장
-            profit = (sell_result['avg_price'] - position.avg_price) * (position.volume * 0.5) - sell_result['fee']
+            
+            buy_amount = position.avg_price * sell_volume
+            buy_fee = buy_amount * 0.0005
+            
+            profit = sell_result['total_price'] - (buy_amount + sell_result['fee'] + buy_fee)
             self.daily_profit += profit
             self.monthly_profit += profit
-            self.telegram.send_sell_report(sell_result, self.daily_profit, self.monthly_profit)
+            self.telegram.send_sell_report(sell_result, buy_amount, buy_fee, self.daily_profit, self.monthly_profit)
 
         # 2. 물타기(DCA) 검사
         dca_level = SniperStrategy.check_dca_level(profit_pct)

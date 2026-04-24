@@ -63,16 +63,27 @@ class TelegramReporter:
         )
         self.send_message(msg)
 
-    def send_sell_report(self, trade_data: dict, daily_profit: float, monthly_profit: float):
-        """기획서 3. 매도 시 리포트 포맷"""
+    def send_sell_report(self, trade_data: dict, buy_amount: float, buy_fee: float, daily_profit: float, monthly_profit: float):
+        """유저 요청에 따른 상세 매도 리포트 포맷 (KST 기준)"""
+        import pytz
+        kst = pytz.timezone('Asia/Seoul')
+        now_kst = datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S')
+
+        # 수익금 계산: 매도 금액 - (이전 매수 금액 + 매도 수수료 + 매수 수수료)
+        profit_krw = trade_data['total_price'] - (buy_amount + trade_data['fee'] + buy_fee)
+
         msg = (
             f"🔴 <b>[매도 리포트]</b>\n"
+            f"⏰ 시간 : {now_kst} (KST)\n"
             f"- 매도 코인 : {trade_data['coin']}\n"
+            f"- 이전 매수 금액 : {buy_amount:,.0f} KRW\n"
             f"- 매도 금액 : {trade_data['total_price']:,.0f} KRW\n"
-            f"- 매도 수수료 : {trade_data['fee']:,.0f} KRW\n"
             f"- 매도 평단가 : {trade_data['avg_price']:,.4f} KRW\n"
+            f"- 매수 수수료 : {buy_fee:,.0f} KRW\n"
+            f"- 매도 수수료 : {trade_data['fee']:,.0f} KRW\n"
             f"--------------------------\n"
-            f"📈 당일 수익 : {daily_profit:,.0f} KRW\n"
-            f"📊 당월 수익 : {monthly_profit:,.0f} KRW"
+            f"💰 이번 거래 수익 : {profit_krw:,.0f} KRW\n"
+            f"📈 당일 누적 수익 : {daily_profit:,.0f} KRW\n"
+            f"📊 당월 누적 수익 : {monthly_profit:,.0f} KRW"
         )
         self.send_message(msg)

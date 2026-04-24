@@ -43,10 +43,13 @@ class UpbitClient:
         # 주문 UUID로 상세 체결 정보 조회
         order_info = self.upbit.get_order(result['uuid'])
         
+        trades = order_info.get('trades', [])
+        total_buy_price = sum(float(t.get('funds', 0)) for t in trades)
+        
         # 리포팅을 위한 데이터 정제
         trade_data = {
             'coin': ticker,
-            'total_price': float(order_info.get('price', amount)), # 체결 금액
+            'total_price': total_buy_price if total_buy_price > 0 else amount, # 실제 체결 총액
             'fee': float(order_info.get('paid_fee', 0)),           # 지불 수수료
             'avg_price': self.upbit.get_avg_buy_price(ticker),     # 매수 후 갱신된 평단가
             'remain_krw': self.get_krw_balance()                   # 매수 후 잔여 현금
@@ -63,11 +66,16 @@ class UpbitClient:
         time.sleep(1)
         order_info = self.upbit.get_order(result['uuid'])
         
+        trades = order_info.get('trades', [])
+        total_sell_price = sum(float(t.get('funds', 0)) for t in trades)
+        total_sell_volume = sum(float(t.get('volume', 0)) for t in trades)
+        avg_price = total_sell_price / total_sell_volume if total_sell_volume > 0 else 0.0
+
         trade_data = {
             'coin': ticker,
-            'total_price': float(order_info.get('price', 0)),   # 매도 체결 금액
+            'total_price': total_sell_price,                    # 실제 매도 체결 총액 (원화)
             'fee': float(order_info.get('paid_fee', 0)),        # 매도 수수료
-            'avg_price': float(order_info.get('price', 0)) / volume if volume > 0 else 0, # 체결 평단가
+            'avg_price': avg_price,                             # 실제 매도 평균 단가
             'remain_krw': self.get_krw_balance()                # 매도 후 잔여 현금
         }
         return trade_data
