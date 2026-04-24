@@ -21,6 +21,8 @@ class BotService:
         self.market = MarketAnalyzer()
         self.total_seed = self.upbit.get_krw_balance()
         self.current_target = None  # 현재 매매 중인 코인
+        self.current_target_dca_level = 0     # 타겟의 물타기 단계 기억
+        self.current_target_half_sold = False # 타겟의 절반 익절 여부 기억
         self.daily_profit = 0.0
         self.monthly_profit = 0.0
         self.last_reported_top_coins = [] # 텔레그램 스팸 방지용 (이전 Top 3 기억)
@@ -101,6 +103,8 @@ class BotService:
                 buy_result = self.upbit.buy_market_order(coin, entry_amount)
                 
                 self.current_target = coin
+                self.current_target_dca_level = 0     # 진입 시 물타기 상태 초기화
+                self.current_target_half_sold = False # 진입 시 익절 상태 초기화
                 self.telegram.send_buy_report(buy_result)
                 break # 다중 감시 중 하나 걸리면 집중
 
@@ -118,10 +122,12 @@ class BotService:
             self.monthly_profit += profit
             self.telegram.send_sell_report(sell_result, self.daily_profit, self.monthly_profit)
             self.current_target = None # 무한 루프 초기화 (1단계 복귀)
+            self.current_target_dca_level = 0
+            self.current_target_half_sold = False
             return
-        elif exit_signal == "HALF_EXIT" and not position.half_sold:
+        elif exit_signal == "HALF_EXIT" and not self.current_target_half_sold:
             sell_result = self.upbit.sell_market_order(self.current_target, volume=position.volume * 0.5)
-            position.half_sold = True
+            self.current_target_half_sold = True # 스팸/무한 매도 방지용 로컬 저장
             profit = (sell_result['avg_price'] - position.avg_price) * (position.volume * 0.5) - sell_result['fee']
             self.daily_profit += profit
             self.monthly_profit += profit
@@ -129,6 +135,35 @@ class BotService:
 
         # 2. 물타기(DCA) 검사
         dca_level = SniperStrategy.check_dca_level(profit_pct)
-        if dca_level > position.current_dca_level:
+        if dca_level > self.current_target_dca_level:
             # 설정된 시드 비율만큼 추가 매수 로직 실행
-            self._execute_dca(dca_level)
+            self._execute_dca(dca_level, position)
+
+    def _execute_dca(self, dca_level: int, position):
+        """[방어] 지정된 단계의 비중만큼 물타기 추가 매수 실행"""
+        # 단계별 시드 투입 비율 (피보나치/마틴게일 기반)
+        dca_rates = {
+            1: 0.04,  # -2.0% 하락 시 4% 투입
+            2: 0.08,  # -4.0% 하락 시 8% 투입
+            3: 0.13,  # -6.0% 하락 시 13% 투입
+            4: 0.21,  # -10.0% 하락 시 21% 투입
+            5: 0.34   # -15.0% 하락 시 34% 투입
+        }
+        
+        rate = dca_rates.get(dca_level, 0)
+        if rate == 0:
+            return
+
+        # 포지션 객체 상태 업데이트 (내부 보존용)
+        self.current_target_dca_level = dca_level
+        
+        buy_amount = self.total_seed * rate
+        buy_result = self.upbit.buy_market_order(self.current_target, buy_amount)
+        
+        # 텔레그램 보고
+        self.telegram.send_message(
+            f"🚨 <b>[방어 시스템: 물타기 {dca_level}단계 발동]</b>\n"
+            f"종목: {self.current_target}\n"
+            f"추가 투입 금액: ₩{buy_amount:,.0f}\n"
+            f"체결 단가: ₩{buy_result['avg_price']:,.2f}"
+        )
