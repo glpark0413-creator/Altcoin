@@ -69,6 +69,12 @@ class BotService:
                             f"📅 당월 누적 수익: {self.monthly_profit:,.0f} KRW\n"
                             f"💰 현재 보유 현금: {self.upbit.get_krw_balance():,.0f} KRW"
                         )
+                    elif cmd.strip().lower() in ["sell", "/sell"]:
+                        if self.current_target:
+                            self.telegram.send_message(f"⚠️ <b>[수동 개입]</b> 사용자의 매도 명령에 따라 <b>{self.current_target}</b> 전량 매도를 실행합니다.")
+                            self._execute_manual_sell()
+                        else:
+                            self.telegram.send_message("⚠️ 현재 진입 중인 종목이 없어 매도할 수 없습니다.")
 
                 # [매크로 생존 스위치] BTC -1.5% 폭락 시 대기
                 if self.market.is_btc_crashing():
@@ -196,3 +202,32 @@ class BotService:
             f"추가 투입 금액: ₩{buy_amount:,.0f}\n"
             f"체결 단가: ₩{buy_result['avg_price']:,.2f}"
         )
+
+    def _execute_manual_sell(self):
+        """[수동 개입] 텔레그램 명령에 의한 즉시 전량 매도 실행"""
+        position = self.upbit.get_position(self.current_target)
+        if not position or position.volume <= 0:
+            return
+
+        # 전량 시장가 매도
+        sell_result = self.upbit.sell_market_order(self.current_target, volume=position.volume)
+        buy_amount = position.avg_price * position.volume
+        buy_fee = buy_amount * 0.0005 # 업비트 기본 수수료율 0.05%
+        
+        # 수익금 계산
+        profit = sell_result['total_price'] - (buy_amount + sell_result['fee'] + buy_fee)
+        self.daily_profit += profit
+        self.monthly_profit += profit
+        
+        # 기존 자동 매도와 동일한 포맷으로 수익금 및 누적 수익 현황 보고
+        self.telegram.send_sell_report(sell_result, buy_amount, buy_fee, self.daily_profit, self.monthly_profit)
+        
+        # 내부 상태 1단계로 완전 초기화
+        self.current_target = None
+        self.current_target_dca_level = 0
+        self.current_target_half_sold = False
+        
+        # 수동 전량 매도 직후, 기존 타겟 리스트를 비우고 스캔 타이머를 초기화하여 
+        # 알고리즘이 즉시 새로운 타겟 코인 3대장을 다시 찾으러 가도록 강제합니다.
+        self.cached_target_coins = []
+        self.last_scan_time = 0
