@@ -67,8 +67,10 @@ class MarketAnalyzer:
             response = requests.get(f"{url}?markets={markets_str}", headers=headers)
             if response.status_code == 200:
                 data = response.json()
+                # 10원 미만 코인 제외
+                filtered_data = [item for item in data if item.get('trade_price', 0) >= 10]
                 # acc_trade_price_24h 기준으로 내림차순 정렬 후 상위 10개
-                sorted_data = sorted(data, key=lambda x: x['acc_trade_price_24h'], reverse=True)
+                sorted_data = sorted(filtered_data, key=lambda x: x['acc_trade_price_24h'], reverse=True)
                 top_10_coins = [item['market'] for item in sorted_data][:10]
             else:
                 top_10_coins = target_tickers[:10]
