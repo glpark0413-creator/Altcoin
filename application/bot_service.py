@@ -23,6 +23,7 @@ class BotService:
         self.current_target = None  # 현재 매매 중인 코인
         self.current_target_dca_level = 0     # 타겟의 물타기 단계 기억
         self.current_target_half_sold = False # 타겟의 절반 익절 여부 기억
+        self.highest_profit_pct = 0.0         # 트레일링 스탑용 최고 수익률 기억
         self.daily_profit = 0.0
         self.monthly_profit = 0.0
         
@@ -133,6 +134,7 @@ class BotService:
                 self.current_target = coin
                 self.current_target_dca_level = 0     # 진입 시 물타기 상태 초기화
                 self.current_target_half_sold = False # 진입 시 익절 상태 초기화
+                self.highest_profit_pct = 0.0         # 진입 시 트레일링 스탑 초기화
                 self.telegram.send_buy_report(buy_result)
                 break # 다중 감시 중 하나 걸리면 집중
 
@@ -141,8 +143,12 @@ class BotService:
         position = self.upbit.get_position(self.current_target)
         profit_pct = position.get_profit_percentage()
 
-        # 1. 익절 검사
-        exit_signal = SniperStrategy.check_exit_condition(profit_pct)
+        # 트레일링 스탑을 위한 최고 수익률 갱신
+        if profit_pct > self.highest_profit_pct:
+            self.highest_profit_pct = profit_pct
+
+        # 1. 익절 검사 (트레일링 스탑 1안 적용을 위해 최고 수익률 전달)
+        exit_signal = SniperStrategy.check_exit_condition(profit_pct, self.highest_profit_pct)
         if exit_signal == "FULL_EXIT":
             sell_result = self.upbit.sell_market_order(self.current_target, volume=position.volume)
             buy_amount = position.avg_price * position.volume
@@ -156,6 +162,7 @@ class BotService:
             self.current_target = None # 무한 루프 초기화 (1단계 복귀)
             self.current_target_dca_level = 0
             self.current_target_half_sold = False
+            self.highest_profit_pct = 0.0
             return
             
         elif exit_signal == "HALF_EXIT" and not self.current_target_half_sold:
@@ -229,6 +236,7 @@ class BotService:
         self.current_target = None
         self.current_target_dca_level = 0
         self.current_target_half_sold = False
+        self.highest_profit_pct = 0.0
         
         # 수동 전량 매도 직후, 기존 타겟 리스트를 비우고 스캔 타이머를 초기화하여 
         # 알고리즘이 즉시 새로운 타겟 코인 3대장을 다시 찾으러 가도록 강제합니다.

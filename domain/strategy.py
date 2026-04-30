@@ -33,8 +33,14 @@ class SniperStrategy:
         return 0
 
     @staticmethod
-    def check_exit_condition(current_profit_pct: float) -> str:
-        """수익률에 따른 익절 조건 반환"""
-        if current_profit_pct >= 2.5: return "FULL_EXIT"  # 전량 매도
-        if current_profit_pct >= 1.5: return "HALF_EXIT"  # 50% 매도
+    def check_exit_condition(current_profit_pct: float, highest_profit_pct: float = 0.0) -> str:
+        """수익률에 따른 익절 조건 반환 (트레일링 스탑 적용)"""
+        # 1. 트레일링 스탑 (1안): 최고 수익률 2.0% 이상 도달 후, 고점 대비 0.8% 꺾이면 전량 매도
+        if highest_profit_pct >= 2.0 and current_profit_pct <= (highest_profit_pct - 0.8):
+            return "FULL_EXIT"
+            
+        # 2. 절반 매도 (기존): 트레일링 스탑 발동 전 수익금 일부 확보용으로 1.5% 도달 시 절반 익절 유지
+        if current_profit_pct >= 1.5:
+            return "HALF_EXIT"
+            
         return "HOLD"
