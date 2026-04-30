@@ -123,7 +123,10 @@ class BotService:
             df_1m = self.market.get_indicators(coin)
             
             if SniperStrategy.is_sniper_entry(df_1m):
-                # 타점 발생! 시드의 20% 진입
+                # 타점 발생! 최신 계좌 잔고를 다시 가져와 복리(늘어난 시드) 적용
+                self.total_seed = self.upbit.get_krw_balance()
+                
+                # 최신 시드의 20% 진입
                 entry_amount = self.total_seed * 0.20
                 buy_result = self.upbit.buy_market_order(coin, entry_amount)
                 
