@@ -126,8 +126,8 @@ class BotService:
                 # 타점 발생! 최신 계좌 잔고를 다시 가져와 복리(늘어난 시드) 적용
                 self.total_seed = self.upbit.get_krw_balance()
                 
-                # 최신 시드의 20% 진입
-                entry_amount = self.total_seed * 0.20
+                # 최신 시드의 30% 진입
+                entry_amount = self.total_seed * 0.30
                 buy_result = self.upbit.buy_market_order(coin, entry_amount)
                 
                 self.current_target = coin
@@ -179,13 +179,13 @@ class BotService:
 
     def _execute_dca(self, dca_level: int, position):
         """[방어] 지정된 단계의 비중만큼 물타기 추가 매수 실행"""
-        # 단계별 시드 투입 비율 (피보나치/마틴게일 기반)
+        # 단계별 시드 투입 비율 (총 70% 비중, 피보나치 기반 조정)
         dca_rates = {
             1: 0.04,  # -2.0% 하락 시 4% 투입
-            2: 0.08,  # -4.0% 하락 시 8% 투입
-            3: 0.13,  # -6.0% 하락 시 13% 투입
-            4: 0.21,  # -10.0% 하락 시 21% 투입
-            5: 0.34   # -15.0% 하락 시 34% 투입
+            2: 0.07,  # -4.0% 하락 시 7% 투입
+            3: 0.11,  # -6.0% 하락 시 11% 투입
+            4: 0.18,  # -10.0% 하락 시 18% 투입
+            5: 0.30   # -15.0% 하락 시 30% 투입
         }
         
         rate = dca_rates.get(dca_level, 0)
